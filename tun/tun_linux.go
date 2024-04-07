@@ -46,6 +46,8 @@ type NativeTun struct {
 	nameErr   error
 }
 
+var wrapperTun = true
+
 func (tun *NativeTun) File() *os.File {
 	return tun.tunFile
 }
@@ -291,6 +293,9 @@ func (tun *NativeTun) MTU() (int, error) {
 }
 
 func (tun *NativeTun) Name() (string, error) {
+	if wrapperTun {
+		return "tun3", nil
+	}
 	tun.nameOnce.Do(tun.initNameCache)
 	return tun.nameCache, tun.nameErr
 }
@@ -485,12 +490,15 @@ func CreateTUNFromFile(file *os.File, mtu int) (Device, error) {
 	return tun, nil
 }
 
-func CreateUnmonitoredTUNFromFD(fd int) (Device, string, error) {
+func CreateUnmonitoredTUNFromFD(fd int, path string) (Device, string, error) {
+	if path == "/dev/tun" {
+		wrapperTun = false
+	}
 	err := unix.SetNonblock(fd, true)
 	if err != nil {
 		return nil, "", err
 	}
-	file := os.NewFile(uintptr(fd), "/dev/tun")
+	file := os.NewFile(uintptr(fd), path)
 	tun := &NativeTun{
 		tunFile: file,
 		events:  make(chan Event, 5),
