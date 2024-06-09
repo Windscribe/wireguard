@@ -372,6 +372,10 @@ func (device *Device) handlePeerLine(peer *ipcSetPeer, key, value string) error 
 		}
 		device.allowedips.RemoveByPeer(peer.Peer)
 
+	case "udp_stuffing":
+		device.log.Verbosef("%v - UAPI: Updating udp stuffing", peer.Peer)
+		peer.udpStuffing.Store(value == "true")
+
 	case "allowed_ip":
 		device.log.Verbosef("%v - UAPI: Adding allowedip", peer.Peer)
 		prefix, err := netip.ParsePrefix(value)

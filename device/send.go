@@ -7,6 +7,7 @@ package device
 
 import (
 	"bytes"
+	"math/rand"
 	"encoding/binary"
 	"errors"
 	"net"
@@ -124,6 +125,24 @@ func (peer *Peer) SendHandshakeInitiation(isRetry bool) error {
 
 	peer.timersAnyAuthenticatedPacketTraversal()
 	peer.timersAnyAuthenticatedPacketSent()
+
+	if (peer.udpStuffing.Load()) {
+		sause := make([]byte, 8)
+		sause[0] = 1;
+		sause[4] = 1;
+		err = peer.SendBuffer(sause)
+
+		ntp := make([]byte, 48)
+		ntp[0] = 0x23;
+		ntp[2] = 0x09;
+		ntp[3] = 0x20;
+		for i:=0; i<20+rand.Intn(20); i++ {
+			randval := make([]byte, 8)
+			rand.Read(randval)
+			copy(ntp[40:], randval)
+			err = peer.SendBuffer(ntp)
+		}
+	}
 
 	err = peer.SendBuffer(packet)
 	if err != nil {
