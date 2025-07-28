@@ -662,9 +662,11 @@ func CreateUnmonitoredTUNFromFD(fd int, customTun bool) (Device, string, error) 
 	if err != nil {
 		return nil, "", err
 	}
-	err = tun.initFromFlags(name)
-	if err != nil {
-		return nil, "", err
+	if !customTun {
+		err = tun.initFromFlags(name)
+		if err != nil {
+			return nil, "", err
+		}
 	}
 	return tun, name, err
 }
