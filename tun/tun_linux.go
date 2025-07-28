@@ -55,6 +55,8 @@ type NativeTun struct {
 	udpGROTable *udpGROTable
 }
 
+var wrapperTun = false
+
 func (tun *NativeTun) File() *os.File {
 	return tun.tunFile
 }
@@ -300,6 +302,11 @@ func (tun *NativeTun) MTU() (int, error) {
 }
 
 func (tun *NativeTun) Name() (string, error) {
+	// If fd is created from non system process SYS_IOCTL calls will fail to getName.
+	// returning empty, some calls like getting mtu will fail.
+	if wrapperTun {
+		return "", nil
+	}
 	tun.nameOnce.Do(tun.initNameCache)
 	return tun.nameCache, tun.nameErr
 }
@@ -634,7 +641,10 @@ func CreateTUNFromFile(file *os.File, mtu int) (Device, error) {
 
 // CreateUnmonitoredTUNFromFD creates a Device from the provided file
 // descriptor.
-func CreateUnmonitoredTUNFromFD(fd int) (Device, string, error) {
+func CreateUnmonitoredTUNFromFD(fd int, customTun bool) (Device, string, error) {
+	if customTun {
+		wrapperTun = true
+	}
 	err := unix.SetNonblock(fd, true)
 	if err != nil {
 		return nil, "", err

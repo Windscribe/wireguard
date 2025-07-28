@@ -56,6 +56,7 @@ type Peer struct {
 	cookieGenerator             CookieGenerator
 	trieEntries                 list.List
 	persistentKeepaliveInterval atomic.Uint32
+	udpStuffing                 atomic.Bool
 }
 
 func (device *Device) NewPeer(pk NoisePublicKey) (*Peer, error) {
