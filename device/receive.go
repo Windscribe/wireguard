@@ -316,7 +316,8 @@ func (device *Device) RoutineHandshake(id int) {
 			// check mac fields and maybe ratelimit
 
 			if !device.cookieChecker.CheckMAC1(elem.packet) {
-				device.log.Verbosef("Received packet with invalid mac1")
+				device.log.Errorf("Handshake packet rejected: invalid MAC1 - type=%d, size=%d, endpoint=%s",
+					elem.msgType, len(elem.packet), elem.endpoint.DstToString())
 				goto skip
 			}
 
@@ -327,6 +328,8 @@ func (device *Device) RoutineHandshake(id int) {
 				// verify MAC2 field
 
 				if !device.cookieChecker.CheckMAC2(elem.packet, elem.endpoint.DstToBytes()) {
+					device.log.Verbosef("Handshake packet under load: invalid MAC2, sending cookie - type=%d, endpoint=%s",
+						elem.msgType, elem.endpoint.DstToString())
 					device.SendHandshakeCookie(&elem)
 					goto skip
 				}
@@ -334,6 +337,8 @@ func (device *Device) RoutineHandshake(id int) {
 				// check ratelimiter
 
 				if !device.rate.limiter.Allow(elem.endpoint.DstIP()) {
+					device.log.Verbosef("Handshake packet dropped: rate limited - type=%d, endpoint=%s",
+						elem.msgType, elem.endpoint.DstToString())
 					goto skip
 				}
 			}
@@ -361,7 +366,8 @@ func (device *Device) RoutineHandshake(id int) {
 
 			peer := device.ConsumeMessageInitiation(&msg)
 			if peer == nil {
-				device.log.Verbosef("Received invalid initiation message from %s", elem.endpoint.DstToString())
+				device.log.Errorf("Handshake initiation consumption failed - sender=%d, endpoint=%s, packet_size=%d",
+					msg.Sender, elem.endpoint.DstToString(), len(elem.packet))
 				goto skip
 			}
 
@@ -393,7 +399,8 @@ func (device *Device) RoutineHandshake(id int) {
 
 			peer := device.ConsumeMessageResponse(&msg)
 			if peer == nil {
-				device.log.Verbosef("Received invalid response message from %s", elem.endpoint.DstToString())
+				device.log.Errorf("Handshake response consumption failed - sender=%d, receiver=%d, endpoint=%s, packet_size=%d",
+					msg.Sender, msg.Receiver, elem.endpoint.DstToString(), len(elem.packet))
 				goto skip
 			}
 

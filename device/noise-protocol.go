@@ -7,6 +7,7 @@ package device
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sync"
@@ -260,6 +261,16 @@ func (h *Handshake) mixKey(data []byte) {
 	mixKey(&h.chainKey, &h.chainKey, data)
 }
 
+// pskHashForLogging returns a hex-encoded truncated hash of the PSK for secure logging
+// Only the first 8 bytes are returned to avoid exposing the full key
+func pskHashForLogging(psk []byte) string {
+	if len(psk) == 0 {
+		return "<empty>"
+	}
+	hash := blake2s.Sum256(psk)
+	return hex.EncodeToString(hash[:8])
+}
+
 /* Do basic precomputations
  */
 func init() {
@@ -398,6 +409,8 @@ func (device *Device) ConsumeMessageInitiation(msg *MessageInitiation) *Peer {
 	_, err = aead.Open(timestamp[:0], ZeroNonce[:], msg.Timestamp[:], hash[:])
 	if err != nil {
 		handshake.mutex.RUnlock()
+		device.log.Errorf("%v - ConsumeMessageInitiation: timestamp decryption failed (likely PSK mismatch) - sender=%d, expected_psk_hash=%s, endpoint=%s, error=%v",
+			peer, msg.Sender, pskHashForLogging(handshake.presharedKey[:]), "unknown", err)
 		return nil
 	}
 	mixHash(&hash, &hash, msg.Timestamp[:])
@@ -408,11 +421,14 @@ func (device *Device) ConsumeMessageInitiation(msg *MessageInitiation) *Peer {
 	flood := time.Since(handshake.lastInitiationConsumption) <= HandshakeInitationRate
 	handshake.mutex.RUnlock()
 	if replay {
-		device.log.Verbosef("%v - ConsumeMessageInitiation: handshake replay @ %v", peer, timestamp)
+		device.log.Errorf("%v - ConsumeMessageInitiation: handshake replay detected - sender=%d, timestamp=%v, last_timestamp=%v, endpoint=%s",
+			peer, msg.Sender, timestamp, handshake.lastTimestamp, "unknown")
 		return nil
 	}
 	if flood {
-		device.log.Verbosef("%v - ConsumeMessageInitiation: handshake flood", peer)
+		device.log.Errorf("%v - ConsumeMessageInitiation: handshake flood protection triggered - sender=%d, time_since_last=%.2fms, min_interval=%.2fms, endpoint=%s",
+			peer, msg.Sender, float64(time.Since(handshake.lastInitiationConsumption))/float64(time.Millisecond),
+			float64(HandshakeInitationRate)/float64(time.Millisecond), "unknown")
 		return nil
 	}
 
@@ -534,6 +550,8 @@ func (device *Device) ConsumeMessageResponse(msg *MessageResponse) *Peer {
 		defer handshake.mutex.RUnlock()
 
 		if handshake.state != handshakeInitiationCreated {
+			device.log.Verbosef("%v - ConsumeMessageResponse: invalid handshake state - expected=%s, actual=%s, sender=%d, receiver=%d",
+				lookup.peer, handshakeInitiationCreated, handshake.state, msg.Sender, msg.Receiver)
 			return false
 		}
 
@@ -549,6 +567,8 @@ func (device *Device) ConsumeMessageResponse(msg *MessageResponse) *Peer {
 
 		ss, err := handshake.localEphemeral.sharedSecret(msg.Ephemeral)
 		if err != nil {
+			device.log.Errorf("%v - ConsumeMessageResponse: failed to compute ephemeral shared secret - sender=%d, receiver=%d, error=%v",
+				lookup.peer, msg.Sender, msg.Receiver, err)
 			return false
 		}
 		mixKey(&chainKey, &chainKey, ss[:])
@@ -556,6 +576,8 @@ func (device *Device) ConsumeMessageResponse(msg *MessageResponse) *Peer {
 
 		ss, err = device.staticIdentity.privateKey.sharedSecret(msg.Ephemeral)
 		if err != nil {
+			device.log.Errorf("%v - ConsumeMessageResponse: failed to compute static shared secret - sender=%d, receiver=%d, error=%v",
+				lookup.peer, msg.Sender, msg.Receiver, err)
 			return false
 		}
 		mixKey(&chainKey, &chainKey, ss[:])
@@ -579,6 +601,8 @@ func (device *Device) ConsumeMessageResponse(msg *MessageResponse) *Peer {
 		aead, _ := chacha20poly1305.New(key[:])
 		_, err = aead.Open(nil, ZeroNonce[:], msg.Empty[:], hash[:])
 		if err != nil {
+			device.log.Errorf("%v - ConsumeMessageResponse: authentication transcript validation failed (PSK mismatch) - sender=%d, receiver=%d, psk_hash=%s, error=%v",
+				lookup.peer, msg.Sender, msg.Receiver, pskHashForLogging(handshake.presharedKey[:]), err)
 			return false
 		}
 		mixHash(&hash, &hash, msg.Empty[:])
@@ -586,6 +610,8 @@ func (device *Device) ConsumeMessageResponse(msg *MessageResponse) *Peer {
 	}()
 
 	if !ok {
+		device.log.Errorf("ConsumeMessageResponse: handshake validation failed - sender=%d, receiver=%d",
+			msg.Sender, msg.Receiver)
 		return nil
 	}
 
@@ -638,6 +664,8 @@ func (peer *Peer) BeginSymmetricSession() error {
 		)
 		isInitiator = false
 	} else {
+		device.log.Errorf("%v - BeginSymmetricSession: keypair derivation failed due to invalid handshake state - state=%s, local_index=%d, remote_index=%d",
+			peer, handshake.state, handshake.localIndex, handshake.remoteIndex)
 		return fmt.Errorf("invalid state for keypair derivation: %v", handshake.state)
 	}
 
