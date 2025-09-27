@@ -6,6 +6,7 @@
 package device
 
 import (
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
@@ -601,8 +602,8 @@ func (device *Device) ConsumeMessageResponse(msg *MessageResponse) *Peer {
 		aead, _ := chacha20poly1305.New(key[:])
 		_, err = aead.Open(nil, ZeroNonce[:], msg.Empty[:], hash[:])
 		if err != nil {
-			device.log.Errorf("%v - ConsumeMessageResponse: authentication transcript validation failed (PSK mismatch) - sender=%d, receiver=%d, psk_hash=%s, error=%v",
-				lookup.peer, msg.Sender, msg.Receiver, pskHashForLogging(handshake.presharedKey[:]), err)
+			device.log.Errorf("%v - ConsumeMessageResponse: authentication transcript validation failed (PSK mismatch) - sender=%d, receiver=%d, psk=%s, error=%v",
+				lookup.peer, msg.Sender, msg.Receiver, base64.StdEncoding.EncodeToString(handshake.presharedKey[:]), err)
 			return false
 		}
 		mixHash(&hash, &hash, msg.Empty[:])
